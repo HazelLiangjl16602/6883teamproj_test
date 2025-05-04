@@ -9,6 +9,8 @@
 #include <ctime>
 #include <iomanip>
 #include <sstream>
+#include <cmath> // 用于 std::nan("")
+
 
 using namespace std;
 
@@ -20,7 +22,8 @@ StockEarnings::StockEarnings(string t, string d, double s)
 DataRetriever::DataRetriever(const string& filename)
     : earningsFile(filename) {}
 
-void DataRetriever::populateStockPrice(vector<StockEarnings>& stockPriceList) {
+
+/*    void DataRetriever::populateStockPrice(vector<StockEarnings>& stockPriceList) {
     ifstream fin(earningsFile);
     if (!fin) {
         cerr << "Error opening earnings announcement file." << endl;
@@ -52,6 +55,48 @@ void DataRetriever::populateStockPrice(vector<StockEarnings>& stockPriceList) {
 
     fin.close();
 }
+*/
+void DataRetriever::populateStockPrice(vector<StockEarnings>& stockPriceList) {
+    ifstream fin(earningsFile);
+    if (!fin) {
+        cerr << "Error opening earnings announcement file." << endl;
+        return;
+    }
+
+    string line;
+    getline(fin, line); // skip header
+
+    while (getline(fin, line)) {
+        stringstream ss(line);
+        string ticker, date, period, estimate, reported, surprise, surprise_pct;
+    
+        getline(ss, ticker, ',');
+        getline(ss, date, ',');
+        getline(ss, period, ',');
+        getline(ss, estimate, ',');
+        getline(ss, reported, ',');
+        getline(ss, surprise, ',');
+        getline(ss, surprise_pct, ',');
+    
+        try {
+            if (ticker.empty()) {
+                cerr << "[Warning] Empty ticker in line: " << line << endl;
+                continue;
+            }
+            date = ConvertDate_MMDDYYYY_to_YYYYMMDD(date); // 🔥 加这一行！
+            double pct = stod(surprise_pct);
+            stockPriceList.emplace_back(ticker, date, pct);
+        } catch (...) {
+            cerr << "[Warning] Invalid surprise_pct in line: " << line << endl;
+        }
+    }
+    
+
+    fin.close(); // 原本就有的
+
+    
+}
+
 
 bool compareSurprise(const StockEarnings& a, const StockEarnings& b) {
     return a.surprisePercent < b.surprisePercent;
@@ -210,34 +255,112 @@ string AddDaysToDate(const string& date, int days) {
 }
 
 
-void DataRetriever::saveStockDataToCSV(const StockMap& stockData, const string& filename) {
-    ofstream fout(filename);
-    fout << "ticker,date,adjusted_close\n";
-    for (const auto& [symbol, dailyData] : stockData) {
-        for (const auto& [date, price] : dailyData) {
-            fout << symbol << "," << date << "," << fixed << setprecision(6) << price << "\n";
+vector<pair<int, double>> DataRetriever::alignPriceToDay0(
+    const string& announcementDate,
+    const map<string, double>& priceHistory,
+    int N
+) {
+    vector<pair<int, double>> alignedSeries;
+
+    if (priceHistory.empty()) {
+        cerr << "Price history is empty for announcement: " << announcementDate << endl;
+        return alignedSeries;
+    }
+
+    // Step 1: 排序所有交易日
+    vector<string> sortedDates;
+    for (const auto& it : priceHistory) {
+        sortedDates.push_back(it.first);
+    }
+    sort(sortedDates.begin(), sortedDates.end()); // 保证从早到晚
+
+    // Step 2: 找到最接近的Day0（只往后找，最多7天）
+    struct tm annDate = {};
+    istringstream ss(announcementDate);
+    ss >> get_time(&annDate, "%Y-%m-%d");
+    if (ss.fail()) {
+        cerr << "Parse announcement date failed: " << announcementDate << endl;
+        return alignedSeries;
+    }
+
+    string day0Date = "";
+    for (int shift = 0; shift <= 7; ++shift) {
+        struct tm temp = annDate;
+        temp.tm_mday += shift;
+        mktime(&temp);
+        ostringstream out;
+        out << put_time(&temp, "%Y-%m-%d");
+        string shiftedDate = out.str();
+
+        if (binary_search(sortedDates.begin(), sortedDates.end(), shiftedDate)) {
+            day0Date = shiftedDate;
+            break;
         }
     }
-    fout.close();
+
+    if (day0Date == "") {
+        cerr << "Cannot align stock with announcement: " << announcementDate << endl;
+        return alignedSeries;
+    }
+
+    // Step 3: 确定day0在sortedDates中的位置
+    auto itDay0 = find(sortedDates.begin(), sortedDates.end(), day0Date);
+    if (itDay0 == sortedDates.end()) {
+        cerr << "Unexpected error: day0 not found after binary search" << endl;
+        return alignedSeries;
+    }
+    int day0Index = distance(sortedDates.begin(), itDay0);
+
+    // Step 4: 从day0往前N天+往后N天提取
+    for (int offset = -N; offset <= N; ++offset) {
+        int targetIndex = day0Index + offset;
+        if (targetIndex >= 0 && targetIndex < (int)sortedDates.size()) {
+            string targetDate = sortedDates[targetIndex];
+            double price = priceHistory.at(targetDate);
+            alignedSeries.push_back({offset, price});
+        } else {
+            alignedSeries.push_back({offset, std::nan("")}); // 超出范围时补nan
+        }
+    }
+
+    return alignedSeries;
 }
 
-void DataRetriever::saveBenchmarkToCSV(const map<string, double>& benchmarkData, const string& filename) {
-    ofstream fout(filename);
-    fout << "date,benchmark_IWV\n";
-    for (const auto& [date, price] : benchmarkData) {
-        fout << date << "," << fixed << setprecision(6) << price << "\n";
-    }
-    fout.close();
-}
 
-void DataRetriever::saveEarningsGroupToCSV(const vector<StockEarnings>& group, const string& filename) {
-    ofstream fout(filename);
-    fout << "ticker,date,surprise_percent\n";
-    for (const auto& entry : group) {
-        fout << entry.ticker << "," << entry.date << "," << fixed << setprecision(4) << entry.surprisePercent << "\n";
-    }
-    fout.close();
-}
+
+
+
+
+
+
+// void DataRetriever::saveStockDataToCSV(const StockMap& stockData, const string& filename) {
+//     ofstream fout(filename);
+//     fout << "ticker,date,adjusted_close\n";
+//     for (const auto& [symbol, dailyData] : stockData) {
+//         for (const auto& [date, price] : dailyData) {
+//             fout << symbol << "," << date << "," << fixed << setprecision(6) << price << "\n";
+//         }
+//     }
+//     fout.close();
+// }
+
+// void DataRetriever::saveBenchmarkToCSV(const map<string, double>& benchmarkData, const string& filename) {
+//     ofstream fout(filename);
+//     fout << "date,benchmark_IWV\n";
+//     for (const auto& [date, price] : benchmarkData) {
+//         fout << date << "," << fixed << setprecision(6) << price << "\n";
+//     }
+//     fout.close();
+// }
+
+// void DataRetriever::saveEarningsGroupToCSV(const vector<StockEarnings>& group, const string& filename) {
+//     ofstream fout(filename);
+//     fout << "ticker,date,surprise_percent\n";
+//     for (const auto& entry : group) {
+//         fout << entry.ticker << "," << entry.date << "," << fixed << setprecision(4) << entry.surprisePercent << "\n";
+//     }
+//     fout.close();
+// }
 
 
 

@@ -44,10 +44,12 @@ public:
                            const string& api_token,
                            StockMap& groupStockMap);
                            
+    vector<pair<int, double>> alignPriceToDay0(const string& announcementDate,const map<string, double>& priceHistory,int N);
 
-    void saveStockDataToCSV(const StockMap& stockData, const string& filename);
-    void saveBenchmarkToCSV(const map<string, double>& benchmarkData, const string& filename);
-    void saveEarningsGroupToCSV(const vector<StockEarnings>& group, const string& filename);
+
+    // void saveStockDataToCSV(const StockMap& stockData, const string& filename);
+    // void saveBenchmarkToCSV(const map<string, double>& benchmarkData, const string& filename);
+    // void saveEarningsGroupToCSV(const vector<StockEarnings>& group, const string& filename);
 };
 
 string ConvertDate_MMDDYYYY_to_YYYYMMDD(const string& date);

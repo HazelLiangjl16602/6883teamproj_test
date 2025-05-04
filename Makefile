@@ -1,31 +1,35 @@
-# Compiler and flags
-CXX = g++
-CXXFLAGS = -Wall -std=c++17   # Notice: now using C++17 standard
+# ===== Makefile =====
 
-# Target executable name
-TARGET = EODMarketData
+# Compiler
+CXX = g++
+CXXFLAGS = -std=c++11 -Wall
+
+# Executable name
+TARGET = final_test
 
 # Source files
-SRCS = main.cpp RetrieveData.cpp
+SRCS = Main.cpp \
+       RetrieveData.cpp \
+       Stock.cpp \
+       GroupedStock.cpp \
+       BootStrap.cpp \
+       Menu.cpp \
+       GNUPlot.cpp    
 
-# Object files
-OBJS = $(SRCS:.cpp=.o)
+# Header dependencies (optional, good practice)
+HDRS = RetrieveData.h Stock.h GroupedStock.h BootStrap.h GNUPlot.h
 
-# Default target
+# Libraries (for curl)
+LIBS = -lcurl
+
+# Build rules
 all: $(TARGET)
 
-# Linking step (link object files and link to libcurl)
-$(TARGET): $(OBJS)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJS) -lcurl
+$(TARGET): $(SRCS) $(HDRS)
+	$(CXX) $(CXXFLAGS) $(SRCS) -o $(TARGET) $(LIBS)
 
-# Compile each .cpp file into .o file
-%.o: %.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
-
-# Clean
+# Clean rules
 clean:
-	rm -f $(OBJS) $(TARGET)
+	rm -f $(TARGET)
 
-# Run (optional)
-run: $(TARGET)
-	./$(TARGET)
+# ===== End =====
